@@ -26,7 +26,6 @@ def read_data(subset):
     "--subset",
     type=click.Choice(["dev-clean", "dev-other", "test-clean", "test-other", "dev", "test", "all"]),
     help="Which LibriSpeech subset to use",
-    default="dev-clean",
     required=True,
     prompt=True,
 )
@@ -34,7 +33,6 @@ def read_data(subset):
     "--feature-dir",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
     help="Path to the directory containing the features",
-    default="/home/nicolvisser/Workspace/pipeline/evaluation/output/hubert_features",
     required=True,
     prompt=True,
 )
@@ -42,7 +40,6 @@ def read_data(subset):
     "--feature-rate",
     type=click.FLOAT,
     help="How many features per second",
-    default=50,
     required=True,
     prompt=True,
 )
@@ -50,7 +47,6 @@ def read_data(subset):
     "--log-dir",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
     help="Directory to save logs results to",
-    default="logs",
     required=True,
     prompt=True,
 )
