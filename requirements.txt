@@ -1,0 +1,7 @@
+click
+numpy
+pandas
+matplotlib
+scikit-learn
+tqdm
+dtaidistance
