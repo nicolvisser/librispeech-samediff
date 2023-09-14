@@ -58,6 +58,18 @@ def read_data(subset):
     prompt=True,
 )
 def main(subset, feature_dir, feature_rate, log_dir, run_name):
+
+    # ============================ Create log dir ============================
+    if run_name == "None":
+        run_name = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    save_dir = Path(log_dir) / run_name
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    (save_dir / "options.txt").write_text(
+        f"subset: {subset}\nfeature_dir: {feature_dir}\nfeature_rate: {feature_rate}"
+    )
+
+    # ===================== Run for each subset chosen =====================
     if subset == "dev":
         subsets = ["dev-clean", "dev-other"]
     elif subset == "test":
@@ -70,22 +82,8 @@ def main(subset, feature_dir, feature_rate, log_dir, run_name):
     for subset in subsets:
         click.echo(click.style(f"\nRunning evaluation on {subset} subset of LibriSpeech...\n", fg="green", bold=True))
 
-        # ========================== Create log dir ==========================
-        if run_name == "None":
-            run_name = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        save_dir = Path(log_dir) / run_name
-        save_dir.mkdir(parents=True, exist_ok=True)
-
-        (save_dir / "options.txt").write_text(
-            f"subset: {subset}\nfeature_dir: {feature_dir}\nfeature_rate: {feature_rate}"
-        )
-
         # ========================== Load word data ==========================
-
         df = read_data(subset)
-
-        # only keep first 100 rows
-        df = df.iloc[:100]
 
         # ========================= Extract features =========================
         click.echo("Extracting features...")
