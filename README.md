@@ -58,9 +58,9 @@ pip install .
 
 ### Data preparation
 
-Ensure you have a directory containing a numpy file for each utterance in the evaluation set. The numpy files should be named with the utterance ID, e.g. `1272-128104-0000.npy`. The tool will recursively search for a file in the directory.
+Ensure you have a directory containing a numpy file for each utterance in the evaluation set. The numpy files should have the same stems as the audio files, e.g. `1272-128104-0000.npy`. The tool will recursively search for a file in the directory.
 
-Each numpy file should contain a 2D array of shape `(T, F)` where `T` is the number of frames and `F` is the number of features per frame. The features should be properly aligned with the audio such that `T*feature_rate ≈ audio_duration`.
+Each numpy file should contain a 2D array of shape `(T, D)` where `T` is the number of frames and `D` is the number of features per frame. The features should be properly aligned with the audio such that `T*feature_rate ≈ audio_duration`.
 
 ### Running the tool
 
