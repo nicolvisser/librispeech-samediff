@@ -2,7 +2,7 @@
 
 A tool to evaluate framewise speech features for word discrimination with dynamic time warping. It follows the method from [Rapid evaluation of speech representations for spoken term discovery](https://www.isca-speech.org/archive/interspeech_2011/carlin11_interspeech.html).
 
-The word features are extracted from the LibriSpeech dataset after aligning with [Montreal Forced Aligner](https://montreal-forced-aligner.readthedocs.io/). The alignments used can be found [here]().
+The word features are extracted from the LibriSpeech dataset after aligning with [Montreal Forced Aligner](https://montreal-forced-aligner.readthedocs.io/). The alignments used can be found [here](https://github.com/nicolvisser/librispeech-samediff/releases/tag/v0.1).
 
 Words are selected with the following criteria:
 
