@@ -122,7 +122,7 @@ def main(
 
     # ================== Compute pairwise Levenshtein distances ==================
     click.echo(
-        f"Computing pairwise Levenshtein distances using {num_processes} processes with chunk size {chunk_size}..."
+        f"Computing pairwise Levenshtein distances using {num_processes}..."
     )
     n = len(words_unit_sequences)
     distance = np.zeros((n, n))
