@@ -1,47 +1,53 @@
 import datetime
+import itertools
 import json
-from itertools import product
+import math
+import multiprocessing as mp
+from functools import partial
 from pathlib import Path
 
-import pkg_resources
 import click
+import Levenshtein
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-from dtaidistance import dtw_ndim
 from sklearn.metrics import precision_recall_curve
 from tqdm import tqdm
 
+from .common import get_subset_list, read_data
 
-def read_data(subset):
-    resource_package = __name__
-    resource_path = f"data/{subset}.csv"
-    data_path = pkg_resources.resource_filename(resource_package, resource_path)
-    df = pd.read_csv(data_path, index_col=0)
-    return df
+
+def compute_distances_chunk(pairs_chunk, word_unit_sequences):
+    results = []
+    for i, j in pairs_chunk:
+        units_i = word_unit_sequences[i]
+        units_j = word_unit_sequences[j]
+        maxlen = max(len(units_i), len(units_j))
+        dist = Levenshtein.distance(units_i, units_j) / maxlen if maxlen > 0 else 0
+        results.append((i, j, dist))
+    return results
 
 
 @click.command()
 @click.option(
     "--subset",
-    type=click.Choice(["dev-clean", "dev-other", "test-clean", "test-other", "dev", "test"]),
+    type=click.Choice(get_subset_list()),
     help="The LibriSpeech subset to use",
     required=True,
     prompt="Pick a subset:",
 )
 @click.option(
-    "--feature-dir",
+    "--units-dir",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
-    help="Directory containing the features",
+    help="Directory containing the 1D unit IDs",
     required=True,
-    prompt="Specify directory containing features",
+    prompt="Specify directory containing unit IDs duplicated at some unit rate (e.g. 50 Hz)",
 )
 @click.option(
-    "--feature-rate",
+    "--unit-rate",
     type=click.FLOAT,
-    help="How many features per second",
+    help="How many units per second",
     required=True,
-    prompt="Specify feature rate (Hz)",
+    prompt="Specify unit rate (Hz)",
 )
 @click.option(
     "--log-dir",
@@ -56,8 +62,27 @@ def read_data(subset):
     help="Name of subdirectory to save logs results to. If not specified, will use current timestamp",
     default="",
 )
-def main(subset, feature_dir, feature_rate, log_dir, run_name):
-    click.echo(click.style(f"\nRunning evaluation on {subset} subset of LibriSpeech...\n", fg="green", bold=True))
+@click.option(
+    "--num-processes",
+    type=click.INT,
+    help="Number of CPU cores to use for parallel computation of chunks Try setting to one less than your total number of cores.",
+    default=mp.cpu_count(),
+)
+def main(
+    subset,
+    units_dir,
+    unit_rate,
+    log_dir,
+    run_name,
+    num_processes,
+):
+    click.echo(
+        click.style(
+            f"\nRunning evaluation using Levenshtein distance on {subset} subset of LibriSpeech...\n",
+            fg="green",
+            bold=True,
+        )
+    )
 
     # ============================ Create log dir ============================
     if run_name == "":
@@ -66,61 +91,71 @@ def main(subset, feature_dir, feature_rate, log_dir, run_name):
     save_dir.mkdir(parents=True, exist_ok=True)
 
     (save_dir / "options.txt").write_text(
-        f"subset: {subset}\nfeature_dir: {feature_dir}\nfeature_rate: {feature_rate}"
+        f"subset: {subset}\n"
+        f"units_dir: {units_dir}\n"
+        f"unit_rate: {unit_rate}\n"
+        f"num_processes: {num_processes}"
     )
 
     # ========================== Load word data ==========================
     df = read_data(subset)
 
-    # ========================= Extract features =========================
-    click.echo("Extracting features...")
-    words_features = []
+    # ========================= Extract units =========================
+    click.echo("Loading units...")
+    words_unit_sequences = []
     for i, row in tqdm(df.iterrows(), total=len(df)):
         _, _, filename, start, end = row
-        matched_paths = Path(feature_dir).rglob(f"{filename}.npy")
+        matched_paths = Path(units_dir).rglob(f"{filename}.npy")
         try:
-            feats_path = next(matched_paths)
+            unit_path = next(matched_paths)
         except StopIteration:
-            raise click.ClickException(f"Could not find file {filename}.npy in {feature_dir}")
-        feats = np.load(feats_path)
-        start = round(start * feature_rate)
-        end = round(end * feature_rate)
-        feats = feats[start:end]
-        # normalize to unit vectors - this will turn euclidean DTW into cosine DTW (proportional)
-        feats = feats / np.linalg.norm(feats, axis=1, keepdims=True)
-        words_features.append(feats.astype(np.float64))
+            raise click.ClickException(
+                f"Could not find file {filename}.npy in {units_dir}"
+            )
+        units = np.load(unit_path)
+        start = round(start * unit_rate)
+        end = round(end * unit_rate)
+        units = units[start:end]
+        units = [k for k, _ in itertools.groupby(units)]
+        units = np.array(units)
+        words_unit_sequences.append(units)
 
-    # ================== Compute pairwise DTW distances ==================
-    click.echo("Computing pairwise DTW distances...")
-    # split into blocks to reduce memory usage and show progress bar
-    n = len(words_features)
-    distance = np.full((n, n), np.inf)
-    num_blocks = 14
-    block_size = n // num_blocks
-    remainder = n % num_blocks
-    block_combinations = [(i, j) for i, j in product(range(num_blocks), repeat=2) if i <= j]
-    for i, j in tqdm(block_combinations):
-        # Calculate indices for block
-        row_start = i * block_size + min(i, remainder)
-        row_end = (i + 1) * block_size + min(i + 1, remainder)
-        col_start = j * block_size + min(j, remainder)
-        col_end = (j + 1) * block_size + min(j + 1, remainder)
-        # Ensure row_end and col_end do not exceed matrix dimensions
-        row_end = min(n, row_end)
-        col_end = min(n, col_end)
-        # Compute DTW distance for this block
-        block_result = dtw_ndim.distance_matrix_fast(
-            words_features, block=((row_start, row_end), (col_start, col_end))
-        )
-        # Update the result matrix with the block result
-        distance[row_start:row_end, col_start:col_end] = block_result[row_start:row_end, col_start:col_end]
-        # Since the matrix is symmetric, copy values to the lower triangle as well
-        if i != j:
-            distance[col_start:col_end, row_start:row_end] = block_result[row_start:row_end, col_start:col_end].T
+    # ================== Compute pairwise Levenshtein distances ==================
+    click.echo(
+        f"Computing pairwise Levenshtein distances using {num_processes} processes with chunk size {chunk_size}..."
+    )
+    n = len(words_unit_sequences)
+    distance = np.zeros((n, n))
+
+    # Generate all unique pairs
+    pairs = list(itertools.combinations(range(n), 2))
+
+    number_of_pairs = len(pairs)
+    chunk_size = math.ceil(number_of_pairs / num_processes)
+
+    # Process chunks in parallel
+    pair_chunks = [pairs[i : i + chunk_size] for i in range(0, len(pairs), chunk_size)]
+    compute_chunk_partial = partial(
+        compute_distances_chunk, words_unit_sequences=words_unit_sequences
+    )
+    click.echo(f"Processing {len(pair_chunks)} chunks in parallel...")
+    all_results = []
+    with mp.Pool(processes=num_processes) as pool:
+        with tqdm(total=len(pair_chunks)) as pbar:
+            for chunk_result in pool.imap(compute_chunk_partial, pair_chunks):
+                all_results.extend(chunk_result)
+                pbar.update(1)
+
+    # Fill the distance matrix
+    for i, j, dist in all_results:
+        distance[i, j] = dist
+        distance[j, i] = dist
 
     # ========================== Save distances ==========================
-    np.save(save_dir / f"{subset}-distances.npy", distance)
-    click.echo(f"Saved distance matrix to {save_dir / f'{subset}-distances.npy'}")
+    np.save(save_dir / f"{subset}-levenshtein-distances.npy", distance)
+    click.echo(
+        f"Saved distance matrix to {save_dir / f'{subset}-levenshtein-distances.npy'}"
+    )
 
     click.echo("Computing precision and recall...")
     words = df.word.to_numpy()
@@ -131,16 +166,15 @@ def main(subset, feature_dir, feature_rate, log_dir, run_name):
     SP = speaker_ids[:, np.newaxis] == speaker_ids[np.newaxis, :]
     SWSP = np.logical_and(SW, SP)
     SWDP = np.logical_and(SW, ~SP)
-    # DWSP = np.logical_and(~SW, SP)
-    # DWDP = np.logical_and(~SW, ~SP)
 
     # ============== Calculate precision and recall curves ==============
     upper_tri = np.triu_indices(len(words), k=1)
+    # Note: We negate the distance to get higher values for more similar items
     P_SW, R_SW, thresholds = precision_recall_curve(SW[upper_tri], -distance[upper_tri])
     _, R_SWSP, _ = precision_recall_curve(SWSP[upper_tri], -distance[upper_tri])
     _, R_SWDP, _ = precision_recall_curve(SWDP[upper_tri], -distance[upper_tri])
 
-    # ==================== Calculate average precsion ====================
+    # ==================== Calculate average precision ====================
     AP_SW = np.abs(np.trapz(P_SW, R_SW))
     AP_SWSP = np.abs(np.trapz(P_SW, R_SWSP))
     AP_SWDP = np.abs(np.trapz(P_SW, R_SWDP))
@@ -170,7 +204,9 @@ def main(subset, feature_dir, feature_rate, log_dir, run_name):
     plt.legend()
     plt.gca().set_aspect("equal", adjustable="box")
     plt.savefig(save_dir / f"{subset}-precision-recall.png", dpi=300)
-    click.echo(f"Saved precision-recall plot to {save_dir / f'{subset}-precision-recall.png'}")
+    click.echo(
+        f"Saved precision-recall plot to {save_dir / f'{subset}-precision-recall.png'}"
+    )
 
     # ========================== Print results ==========================
     click.echo("")

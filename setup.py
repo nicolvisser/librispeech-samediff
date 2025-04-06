@@ -12,10 +12,12 @@ setup(
         "scikit-learn",
         "tqdm",
         "dtaidistance",
+        "python-Levenshtein",
     ],
     package_data={"librispeech_samediff": ["data/*.csv"]},
     entry_points="""
         [console_scripts]
-        libri-sd=librispeech_samediff.main:main
+        samediff-dtw=librispeech_samediff.samediff_dtw:main
+        samediff-ed=librispeech_samediff.samediff_ed:main
     """,
 )
