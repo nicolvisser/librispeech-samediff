@@ -16,11 +16,11 @@ from tqdm import tqdm
 from .common import get_subset_list, read_data
 
 
-def compute_distances_chunk(pairs_chunk, word_unit_sequences):
+def compute_distances_chunk(pairs_chunk, words_unit_sequences):
     results = []
     for i, j in pairs_chunk:
-        units_i = word_unit_sequences[i]
-        units_j = word_unit_sequences[j]
+        units_i = words_unit_sequences[i]
+        units_j = words_unit_sequences[j]
         maxlen = max(len(units_i), len(units_j))
         dist = Levenshtein.distance(units_i, units_j) / maxlen if maxlen > 0 else 0
         results.append((i, j, dist))
